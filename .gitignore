@@ -1,0 +1,12 @@
+.DS_Store
+
+# PyCharm settings
+.idea/
+
+# Python stuff
+*__pycache__*
+venv/
+*.ipynb_checkpoints*
+
+# Exclude large files! Github won't let you upload them and it's hard to remove them from the history correctly.
+experiments/data/
