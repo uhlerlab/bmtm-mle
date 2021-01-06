@@ -4,6 +4,11 @@ from scipy import optimize
 import numpy as np
 
 class Tree:  
+    ''' Recusive BMTM datastructure
+
+    Allows getting/setting of variance and observed data
+    Methods for computing likelihood'''
+
     def __init__(self, parent=None):
         self.children = []
         self.above_var = 0
@@ -126,17 +131,21 @@ class Tree:
         
         return them.var()
 
-    def make_posfix(self, l):
+    def make_prefix(self, l):
         i = 0
         while i < len(l):
             n = l[i]
             self.make_child()
             if n > 0:
-                self.children[-1].make_posfix(l[i+1:i+n+1])
+                self.children[-1].make_prefix(l[i+1:i+n+1])
             i += 1 + n
+
+
 if __name__ == '__main__':
+    #Use scipy's optimize module to estimate MLE
+
     t = Tree()
-    t.make_posfix([0, 0])
+    t.make_prefix([0, 0])
     t.set_data([2, 5])
 
     def is_singular(args):
