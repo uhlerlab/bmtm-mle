@@ -1,7 +1,11 @@
+'''Tree datastructure'''
 import math
 import random
-from scipy import optimize
+
 import numpy as np
+from scipy import optimize
+
+EPSILON = 1e-6
 
 class Tree:  
     ''' Recusive BMTM datastructure
@@ -14,6 +18,12 @@ class Tree:
         self.above_var = 0
         self.data = None
         self.parent = parent
+    
+    def hash(self):
+        if self.parent is None:
+            return (0,)
+        
+        return self.parent.hash() + (self.parent.children.index(self),)
 
     def make_child(self):
         self.children.append(Tree(self))
@@ -33,13 +43,19 @@ class Tree:
             count += c.num_leaf_nodes() 
         return count
 
-    def set(self, args):
+    def set_var(self, args):
         self.above_var = args[0]
         count = 1
         for c in self.children:
-            count += c.set(args[count:]) 
+            count += c.set_var(args[count:]) 
 
         return count
+
+    def get_var(self):
+        ans = [self.above_var]
+        for c in self.children:
+            ans.extend(c.get_var())
+        return ans
 
     def set_data(self, data):
         if len(self.children) == 0:
@@ -71,6 +87,7 @@ class Tree:
     def likelihood(self, debug=False):
         m_arr, s_arr, x_arr = self._build_matrices()
         m = np.array(m_arr)
+        #m = np.reshape(np.array(params), (self.num_leaf_nodes(), -1))
         s = np.array(s_arr)
         x = np.array(x_arr)
         if debug:
@@ -90,10 +107,13 @@ class Tree:
         # This should be equivalent? tr = - np.trace(np.matmul(s, inv)))
         if debug:
             print('DL', detlog, ', Tr', tr)
-        return detlog + tr
+        score = detlog + tr
+        if math.isnan(score) or math.isinf(score):
+            return -9999999
+        return score
 
     def is_singular(self):
-        m_arr, s_arr = self._build_matrices()
+        m_arr, s_arr, x_arr = self._build_matrices()
         m = np.array(m_arr)
         return -2*int(self._is_singular(m)) + 1
 
@@ -139,38 +159,59 @@ class Tree:
             if n > 0:
                 self.children[-1].make_prefix(l[i+1:i+n+1])
             i += 1 + n
+    
+    def mle(self, method='trust-constr', max_var=30, accept=-100, maxiter=500):
+        def is_singular(args):
+            self.set_var(args)
+            return int(self.is_singular())
+
+        def opt(args):
+            self.set_var(args)
+            ll = self.likelihood()
+            return -1*ll # min to max
+
+        size = self.num_leaf_nodes()**2
+        #print(size)
+        size = self.num()
+        starting = [random.uniform(0, 1) for _ in range(size)]
+        bnds = tuple((0, None) for _ in range(size))
+        cons = ({'type': 'ineq', 'fun': is_singular},)
+        print(bnds, cons)
+
+        # Various optimization methods
+        global_param_space = tuple((0, max_var) for _ in range(size))
+        if method == 'dual_annealing':
+            res = optimize.dual_annealing(opt, global_param_space, accept=accept, maxiter=maxiter, initial_temp=10000)
+        elif method == 'differential_evolution':
+            res = optimize.differential_evolution(opt, global_param_space)
+        else:
+            res = optimize.minimize(opt, starting, method=method, bounds=bnds, constraints=cons)
+
+        self.set_var(res.x)
+        return res.x
+    
+    def is_observed_node(self):
+        if len(self.children) == 0:
+            return True
+        if self.above_var < EPSILON:
+            return all(c.is_observed_node() for c in self.children) 
+
+        return any(c.above_var < EPSILON and c.is_observed_node() for c in self.children) 
+    
+    def is_fully_observed(self):
+        return self.is_observed_node() and all(c.is_fully_observed() for c in self.children)
+    
+
+    def zero_pattern(self):
+        p = (self.above_var < EPSILON,)
+        for c in self.children:
+            p += c.zero_pattern()
+        return p
 
 
 if __name__ == '__main__':
-    #Use scipy's optimize module to estimate MLE
-
-    t = Tree()
-    t.make_prefix([0, 0])
-    t.set_data([2, 5])
-
-    def is_singular(args):
-        t.set(args)
-        return int(t.is_singular())
-
-    def opt(args):
-        t.set(args)
-        ll = t.likelihood()
-        return -1*ll # min to max
-
-    size = t.num()
-    starting = [random.uniform(0, 1) for _ in range(size)]
-    bnds = tuple((0, None) for _ in range(size))
-    cons = ({'type': 'ineq', 'fun': is_singular},)
-
-    # Various optimization methods
-    #res = optimize.minimize(opt, starting, method='trust-constr', bounds=bnds, constraints=cons)
-    #res = optimize.minimize(opt, starting, method='SLSQP', bounds=bnds, constraints=cons)
-    #res = optimize.dual_annealing(opt, tuple((0, 30) for _ in range(size)))
-    res = optimize.differential_evolution(opt, tuple((0, 100) for _ in range(size)))
-    #res = optimize.minimize(opt, starting, bounds=bnds)
-
-    print('---Result---')
-    print(res)
-    print('------------')
-    print("Compute current liklihood:")
-    print(t.likelihood(True))
+    tree = Tree()
+    tree.make_prefix([0, 0, 0])
+    tree.set_data([1, 2, 3])
+    tree.set_var([0, 1, 4, 9])
+    print(tree.likelihood())
