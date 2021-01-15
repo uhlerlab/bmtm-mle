@@ -35,7 +35,7 @@ def var_prediction_star(data):
 # Thus, we have that there are O(n) latent nodes, and so, O(n) total nodes in our tree
 
 # Initial Analysis:
-# We at each depth, we consider O(n) centers. For each center, we require O(n) time for each subdepth to check against subcenters.
+# At each depth, we consider O(n) centers. For each center, we require O(n) time for each subdepth to check against subcenters.
 # This process is O(sd) where s is the depth away from the bottom of the tree. Thus, this process is O(dn) = O(n^2).
 # Thus, overall, we spend O(n^3) at each layer, leading us to a runtime of O(dn^3) = O(n^4).
 

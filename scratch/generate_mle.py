@@ -14,6 +14,7 @@ from util import max_var
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_trials', type=int, default=1000)
+    parser.add_argument('--method', type=str, default='dual_annealing')
     parser.add_argument('--structure', type=str, default='0-2-0-0')
     parser.add_argument('--tag', type=str, default='diff')
     args = parser.parse_args()
@@ -31,18 +32,19 @@ if __name__ == '__main__':
         tree.set_data(data[i])
         print(data[i])
 
-        def compute_mle(data):
-            return tree.mle(method='dual_annealing', 
+        def compute_mle(d):
+            return tree.mle(method=args.method, 
                 max_var=max(10, max_var(d)), 
                 accept=-1000, maxiter=5000)
 
-        mle = compute_mle(data)
+        mle = compute_mle(data[i])
         if any(math.isnan(m) or math.isinf(m) for m in mle):
             print('Redoing...')
-            mle = compute_mle(data)
+            mle = compute_mle(data[i])
 
-        file_name = '{}res_file_{}_{}.json'.format(
+        file_name = '{}{}_res_file_{}_{}.json'.format(
             (args.tag+'_' if args.tag.strip() != '' else ''), 
+            args.method,
             args.num_trials, args.structure)
         file_dict['results'].append([list(data[i]), list(mle)])
         with open(file_name, 'w') as res_file:
