@@ -14,6 +14,8 @@ from util import *
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--in_file', type=str, default='res_file_1000_0-2-0-0.json')
+    parser.add_argument('--recheck', type=int, default=1)
+    parser.add_argument('--max_zero_variance', type=float, default=1e-6)
     args = parser.parse_args()
 
     with open(args.in_file, 'r') as res_file:
@@ -29,12 +31,15 @@ if __name__ == '__main__':
 
             tree.set_var(mle)
 
-            stats.append(tree.is_fully_observed())
+            stats.append(tree.is_fully_observed(args.max_zero_variance))
             if stats[-1] is False:
                 print("Found potential latent tree. Rechecking...")
-                tree.set_data(data)
-                mle = tree.mle(method='dual_annealing', max_var=max_var(data))
-                print(data, mle)
-                stats[-1] = tree.is_fully_observed()
-                if stats[-1] is False:
+                if args.recheck != 0:
+                    tree.set_data(data)
+                    mle = tree.mle(method='dual_annealing', max_var=max_var(data))
+                    print(data, mle)
+                    stats[-1] = tree.is_fully_observed(args.max_zero_variance)
+                    if stats[-1] is False:
+                        raise ValueError('{} {}'.format(data, mle))
+                else:
                     raise ValueError('{} {}'.format(data, mle))

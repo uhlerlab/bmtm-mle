@@ -18,10 +18,48 @@ def var_prediction_star(data):
     parent = scores[-1][1]
     return [(parent)**2] + [(a-parent)**2 for a in data]
 
+def solve_constrained_two(d1, d2, p):
+    assert(d1 != p)
+    assert(d2 != p)
+    ed1 = d1 - p
+    ed2 = d2 - p
+    a = 0
+    b = 0
+    if (ed1 < 0) != (ed2 < 0):
+        h = ed1 if ed1 > 0 else ed2
+        o = ed1 if ed1 < 0 else ed2
+        a = 1/4 *(3*h**2 - 4*h*o + o**2) - 1/4*math.sqrt(h**4 - 8*h**3*o + 14*h**2*o**2 - 8*h*o**3 + o**4)
+        b = -a + h**2 - 2*h*o + o**2
+        if h != ed1:
+            t = a
+            a = b
+            b = t
+    else:
+       pass
+    
+    return a, b
+
+def experimental(data):
+    if len(data) < 3:
+        raise ValueError('Star too small')
+    
+    d1 = data[-2]
+    d2 = data[-1]
+    experimental()
+
+def star_experimental(data):
+    return experimental(data+[0])
+
+m1 = -1
+m2 = 1
+a, b = solve_constrained_two(m1, m2, 0)
+print(a, b, a + b, (m1 - m2)**2, a*b/(a + b), ((a*m2 + b*m1)/(a + b))**2)
+
 # High level pseudo code
 # for given latent node, let's store the scores over all possible children
 # for a new latent node, we can recompute the scores as the multiplication of two products
-# first product: for each unaffected tree, either:
+# first product: for:w
+#  each unaffected tree, either:
 #     1) loop over all center values and find the min when multiplied with new center
 #     2) ``remove'' current root and let children directly connect with parent -- recursively find best value 
 # second product: for affected tree, return the center value of root latent with current center
@@ -56,14 +94,16 @@ class Solver:
         return self.mem[c_hash]
 
     def best_subtree_value(self, tree, top_center):
-        candidate = min(abs(top_center-lower_center)*value for lower_center, value in self.get_stored(tree).items())
+        candidate, center_val = min((abs(top_center-lower_center)*value, lower_center) for lower_center, value in self.get_stored(tree).items())
+        other_candidate, other_center_val = None, top_center
         if len(tree.children) != 0: # try removing current node
-            other = math.prod(self.best_subtree_value(c, top_center) for c in tree.children)
-            return min(other, candidate)
-        return candidate
+            other = math.prod(self.best_subtree_value(c, top_center)[0] for c in tree.children)
+        if other_candidate is not None and other_candidate < candidate:
+            return other_candidate, other_center_val
+        return candidate, center_val
 
     def set_optimal_vars(self, tree, top_center):
-        best_val = self.best_subtree_value(tree, top_center)
+        best_val = self.best_subtree_value(tree, top_center)[0]
         candidate = min((abs(top_center-lower_center)*value, lower_center) for lower_center, value in self.get_stored(tree).items())
 
         #print(top_center, best_val, candidate)
@@ -89,7 +129,7 @@ class Solver:
                 self.mem[current_hash][d] = this_tree_data[d] # first product
                 for other in tree.children:
                     if other is not c:
-                        self.mem[current_hash][d] *= self.best_subtree_value(other, d)
+                        self.mem[current_hash][d] *= self.best_subtree_value(other, d)[0]
 
     def predict_mle(self, tree):
         self.mem = {}
@@ -100,3 +140,15 @@ class Solver:
         self.mem[tuple()] = {0: self.best_subtree_value(tree, 0)}
 
         self.set_optimal_vars(tree, 0)
+
+if __name__ == '__main__':
+    tree = Tree()
+    #tree.make_prefix([6, 2, 0, 0, 2, 0, 0, 6, 2, 0, 0, 2, 0, 0])
+    #tree.set_data([-1, -2, 4, 5, 7, 6, -30, 2])
+    tree.make_prefix([2, 0, 0, 2, 0, 0])
+    tree.set_data([-3, 3, 5, 20])
+
+    solver = Solver()
+    for i in range(-10, 10):
+        val = i +.5
+        print(val, solver.best_subtree_value(tree, 0))

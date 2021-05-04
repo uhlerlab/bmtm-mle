@@ -17,6 +17,7 @@ def test_solver():
     solver = Solver()
 
     for p in range(2, 10):
+        print("Trying on {} node star".format(p))
         tree = Tree()
         tree.make_prefix([0]*p)
         data = list(np.random.normal(size=(p)) )
@@ -34,6 +35,7 @@ def test_solver():
             print('MLE of solve then star', solve_vars, star_vars)
             print('Likelihood of solve then star', solve_likelihood, star_likelihood)
             raise ValueError('Star function finds better likelihood')
+
     tree = Tree()
     tree.make_prefix([0, 2, 0, 0])
     tree.set_data([-1, 5, 2])
@@ -65,14 +67,20 @@ if __name__ == '__main__':
 
             mle_solver.predict_mle(tree)
             var_pred = tree.get_var()
+            assert(all(a >= 0 for a in var_pred))
             pred = tree.likelihood()
+            pred_struct = tree.zero_pattern()
+
+            tree.mle(method='trust-constr')
+            other_l = tree.likelihood()
 
             tree.set_var(mle)
             found = tree.likelihood()
+            found_struct = tree.zero_pattern()
 
-            if found-FLOATING_POINT_EPS > pred:
-                print('Fail', pred, found)
+            if found-FLOATING_POINT_EPS > pred or other_l-FLOATING_POINT_EPS > pred:
+                print('Fail', pred, found, other_l)
                 print(var_pred, mle)
                 raise ValueError('Did not predict MLE')
             else:
-                print('Pass', pred, found)
+                print('Pass', pred, found, pred_struct == found_struct, pred_struct, found_struct)
