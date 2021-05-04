@@ -97,7 +97,7 @@ class Solver:
         candidate, center_val = min((abs(top_center-lower_center)*value, lower_center) for lower_center, value in self.get_stored(tree).items())
         other_candidate, other_center_val = None, top_center
         if len(tree.children) != 0: # try removing current node
-            other = math.prod(self.best_subtree_value(c, top_center)[0] for c in tree.children)
+            other_candidate = math.prod(self.best_subtree_value(c, top_center)[0] for c in tree.children)
         if other_candidate is not None and other_candidate < candidate:
             return other_candidate, other_center_val
         return candidate, center_val
