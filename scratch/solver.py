@@ -143,12 +143,15 @@ class Solver:
 
 if __name__ == '__main__':
     tree = Tree()
-    #tree.make_prefix([6, 2, 0, 0, 2, 0, 0, 6, 2, 0, 0, 2, 0, 0])
-    #tree.set_data([-1, -2, 4, 5, 7, 6, -30, 2])
-    tree.make_prefix([2, 0, 0, 2, 0, 0])
-    tree.set_data([-3, 3, 5, 20])
+    tree.make_prefix([2, 0, 0, 2, 0, 0, 6, 2, 0, 0, 2, 0, 0])
+    tree.set_data([-1, -2, 4, 5, 7, 6, -30, 2])
+    #tree.make_prefix([0, 0, 0, 0, 0, 0])
+    #data = [-1, 4, 5, 8, -5, -20]
+    #tree.set_data(data)
 
     solver = Solver()
     for i in range(-10, 10):
         val = i +.5
-        print(val, solver.best_subtree_value(tree, 0))
+        top_center = val
+        l = [(lower_center, abs(top_center-lower_center)*value) for lower_center, value in solver.get_stored(tree).items()]
+        print(list(sorted(l)))

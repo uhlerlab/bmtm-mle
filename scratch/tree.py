@@ -4,7 +4,9 @@ import random
 import re
 
 import numpy as np
+
 from scipy import optimize
+from util import fr_norm_sq
 
 EPSILON = 1e-6
 
@@ -20,6 +22,7 @@ class Tree:
         self.children = []
         self.above_var = 0
         self.data = None
+        self.label = None
         self.parent = parent
     
     def hash(self):
@@ -62,6 +65,7 @@ class Tree:
 
     def sample_data(self, mean=0):
         newmean = np.random.normal(loc=mean, scale=math.sqrt(self.above_var))
+        #newmean = np.random.uniform(low=mean-math.sqrt(self.above_var), high=mean+math.sqrt(self.above_var))
         if len(self.children) == 0:
             return [newmean]
         out = []
@@ -75,7 +79,7 @@ class Tree:
 
     def sparse_newick(self):
         if len(self.children) == 0:
-            return str(self.data)
+            return str(self.label)
 
         direct_child_newicks = []
         newicks = []
@@ -103,6 +107,16 @@ class Tree:
             new += candidate_parents[0][i+1:]
         return new
 
+    def set_labels(self, labels):
+        if len(self.children) == 0:
+            self.label = labels[0]
+            return 1 
+
+        count = 0
+        for c in self.children:
+            count += c.set_labels(labels[count:]) 
+        return count
+
     def set_data(self, data):
         if len(self.children) == 0:
             self.data = data[0]
@@ -115,6 +129,10 @@ class Tree:
     
     def var(self):
         return self.above_var + (0 if self.parent is None else self.parent.var())
+    
+    def cov_matrix(self):
+        nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
+        return [[a.covar(b) for b in nodes] for a in nodes]
 
     def _build_matrices(self):
         nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
@@ -248,6 +266,37 @@ class Tree:
         self.set_var(res.x)
         return res.x
         #return res2
+
+    def fr_proj(self, method='trust-constr', max_var=30, accept=-100, maxiter=500):
+        def is_singular(args):
+            self.set_var(args)
+            return int(self.is_singular())
+
+        def opt(args):
+            if any(a < 0 for a in args):
+                return -LOW_NUMBER 
+            self.set_var(args)
+            m_arr, s_arr, x_arr = self._build_matrices()
+            return fr_norm_sq(m_arr, s_arr)
+
+        size = self.num()
+        starting = [random.uniform(-1, 1) for _ in range(size)]
+        bnds = tuple((0, None) for _ in range(size))
+        cons = ({'type': 'ineq', 'fun': is_singular},)
+
+        # Various optimization methods
+        global_param_space = tuple((0, max_var) for _ in range(size))
+        if method == 'dual_annealing':
+            res = optimize.dual_annealing(opt, global_param_space, accept=accept, maxiter=maxiter, initial_temp=10000)
+        elif method == 'differential_evolution':
+            res = optimize.differential_evolution(opt, global_param_space)
+        elif method == 'basinhopping':
+            res = optimize.basinhopping(opt, starting)
+        else:
+            res = optimize.minimize(opt, starting, method=method, bounds=bnds, constraints=cons)
+
+        self.set_var(res.x)
+        return res.x
     
     def is_observed_node(self, eps=EPSILON):
         if len(self.children) == 0:
