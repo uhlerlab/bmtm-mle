@@ -47,5 +47,6 @@ if __name__ == '__main__':
             args.method,
             args.num_trials, args.structure)
         file_dict['results'].append([list(data[i]), list(mle)])
+        print('file name', file_name)
         with open(file_name, 'w') as res_file:
             json.dump(file_dict, res_file)

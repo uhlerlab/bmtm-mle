@@ -12,6 +12,7 @@ from contextlib import contextmanager
 
 from scratch.tree import Tree
 from scratch.solver import Solver
+from scratch.util import *
 
 # From stack overflow
 class TimeoutException(Exception): pass
@@ -25,25 +26,6 @@ def time_limit(seconds):
         yield
     finally:
         signal.alarm(0)
-
-def fat_tree_structures(levels):
-    trees = [[0, 0]]
-    for i in range(levels):
-        half = [len(trees[-1])] + trees[-1]
-        trees.append(half + half)
-    return trees
-
-def stars(max_nodes):
-    trees = []
-    for i in range(2, max_nodes+1):
-        trees.append([0]*i)
-    return trees
-
-def long_tree_structures(max_nodes):
-    trees = [[0, 0]]
-    for i in range(max_nodes-2):
-        trees.append([0, (i*2)+2] + trees[-1])
-    return trees
 
 def dump_experiment(times, title=None):
     if title is None:

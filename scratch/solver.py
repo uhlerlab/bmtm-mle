@@ -18,6 +18,12 @@ def var_prediction_star(data):
     parent = scores[-1][1]
     return [(parent)**2] + [(a-parent)**2 for a in data]
 
+def var_prediction_star_novel(data):
+    line = sorted(data+[0])
+    scores = sorted([(-1*sum((a-b)**2 for b in line if a != b), a) for a in line])
+    parent = scores[-1][1]
+    return [(parent)**2] + [(a-parent)**2 for a in data]
+
 def solve_constrained_two(d1, d2, p):
     assert(d1 != p)
     assert(d2 != p)

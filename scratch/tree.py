@@ -2,6 +2,7 @@
 import math
 import random
 import re
+import subprocess
 
 import numpy as np
 
@@ -11,6 +12,41 @@ from util import fr_norm_sq
 EPSILON = 1e-6
 
 LOW_NUMBER = -999999
+
+def bhv_distance_owens(t1, t2, fh='tmpbhv.txt'):
+    input = t1.newick() + '\n' + t2.newick()
+    #print('input')
+    #print(input)
+    with open(fh, 'w') as f:
+        f.write(input)
+    cmd = 'java -jar jj.jar -o /dev/stdout {}'.format(fh)
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+
+    comps = output.decode().strip().split()
+    print(comps)
+
+    return float(comps[-1])
+
+def bhv_distance_owens_list(ts, fh='tmpbhv.txt'):
+    input = '\n'.join(ts)
+    with open(fh, 'w') as f:
+        f.write(input)
+    cmd = 'java -jar jj.jar -o /dev/stdout {}'.format(fh)
+    process = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
+    output, error = process.communicate()
+
+    comps = [line.strip().split() for line in output.decode().strip().split('\n')]
+    return [float(c[-1]) for c in comps]
+
+
+def gaussian_likelihood(m, s):
+    #print(m, s)
+    inv = np.linalg.inv(m)
+    detlog = np.log(np.linalg.det(inv)) 
+    tr = -np.trace(np.matmul(s, inv))
+    score = detlog + tr
+    return score
 
 class Tree:  
     ''' Recusive BMTM datastructure
@@ -62,6 +98,16 @@ class Tree:
         for c in self.children:
             ans.extend(c.get_var())
         return ans
+    
+    def random_fo(self, seed):
+        count = 1
+        if len(self.children) > 0:
+            zero_index = seed[0] % len(self.children)
+            self.children[zero_index].above_var = 0
+            for c in self.children:
+                count += c.random_fo(seed[count:]) 
+
+        return count
 
     def sample_data(self, mean=0):
         newmean = np.random.normal(loc=mean, scale=math.sqrt(self.above_var))
@@ -76,6 +122,15 @@ class Tree:
     def set_random_data(self):
         p = self.num_leaf_nodes()
         return self.set_data(list(np.random.normal(size=(p,))))
+
+    def newick(self, root=True):
+        if len(self.children) == 0:
+            return '{}:{}'.format(self.data, self.above_var)
+        
+        body = ','.join(c.newick(False) for c in self.children)
+        if not root:
+            return '({}):{}'.format(body, self.above_var)
+        return '({},0:{});'.format(body, self.above_var)
 
     def sparse_newick(self):
         if len(self.children) == 0:
@@ -107,6 +162,14 @@ class Tree:
             new += candidate_parents[0][i+1:]
         return new
 
+    def get_labels(self):
+        if len(self.children) == 0:
+            return [self.label]
+        ans = []
+        for c in self.children:
+            ans.extend(c.get_labels())
+        return ans
+
     def set_labels(self, labels):
         if len(self.children) == 0:
             self.label = labels[0]
@@ -116,6 +179,14 @@ class Tree:
         for c in self.children:
             count += c.set_labels(labels[count:]) 
         return count
+
+    def get_data(self):
+        if len(self.children) == 0:
+            return [self.data]
+        ans = []
+        for c in self.children:
+            ans.extend(c.get_data())
+        return ans
 
     def set_data(self, data):
         if len(self.children) == 0:
@@ -157,23 +228,13 @@ class Tree:
         x = np.array(x_arr)
         if debug:
             print("Computing likelihood...")
-            print(m)
-            print(s)
+            #print(m)
+            #print(s)
 
         if self._is_singular(m):
             return LOW_NUMBER 
 
-        inv = np.linalg.inv(m)
-        if debug:
-            print(inv)
-        
-        detlog = np.log(np.linalg.det(inv)) 
-        #tr = -np.matmul(np.matmul(np.transpose(x), inv), x)
-        tr = -np.trace(np.matmul(s, inv))
-        # This should be equivalent? tr = - np.trace(np.matmul(s, inv)))
-        if debug:
-            print('DL', detlog, ', Tr', tr)
-        score = detlog + tr
+        score = gaussian_likelihood(m, s)
         if math.isnan(score) or math.isinf(score):
             return LOW_NUMBER 
         return (1/2)*score
@@ -182,6 +243,44 @@ class Tree:
         m_arr, s_arr, x_arr = self._build_matrices()
         m = np.array(m_arr)
         return -2*int(self._is_singular(m)) + 1
+
+    def nodes(self):
+        yield self
+        for c in self.children:
+            yield from c.nodes()
+
+    def latents(self):
+        if len(self.children) > 0:
+            yield self
+            for c in self.children:
+                yield from c.latents()
+
+    def leaves(self):
+        if len(self.children) == 0:
+            yield self
+        else:
+            for c in self.children:
+                yield from c.leaves()
+
+    def _splits_below(self):
+        if len(self.children) == 0:
+            return [((self.label,), self.above_var)]
+        
+        splits = []
+        below = set()
+        for c in self.children:
+            new = c._splits_below()
+            splits.extend(new)
+            for split, av in new:
+                below.update(split)
+        return splits + [(tuple(sorted(below)), self.above_var)]
+
+    def get_splits(self):
+        labels = set(self.get_labels())
+        labels.add(-100)
+        below_splits = self._splits_below()
+
+        return [tuple(sorted((s, tuple(sorted(labels - set(s)))))) for s, av in below_splits if av > 0]
 
     def get_leaf(self, ind):
         if len(self.children) == 0:
@@ -199,7 +298,7 @@ class Tree:
 
         raise ValueError("Couldnt find child with index")
     
-    def covar(self, other):
+    def lca(self, other):
         me = self 
         them = other
         while me is not None and them != me:
@@ -211,11 +310,14 @@ class Tree:
 
             them = other 
             me = me.parent
-
+    
         if them is None or me is None or them is not me:
             raise ValueError('Couldnt find LCA')
         
-        return them.var()
+        return them
+
+    def covar(self, other):
+        return self.lca(other).var()
 
     def make_prefix(self, l):
         i = 0
@@ -225,8 +327,19 @@ class Tree:
             if n > 0:
                 self.children[-1].make_prefix(l[i+1:i+n+1])
             i += 1 + n
+
+    def get_prefix(self, root=True):
+        if len(self.children) == 0:
+            return [0]
+        ans = []
+        for c in self.children:
+            ans.extend(c.get_prefix(False))
+        if root:
+            return ans
+        return [len(ans)]+ans
+
     
-    def mle(self, method='trust-constr', max_var=30, accept=-100, maxiter=500):
+    def mle(self, method='trust-constr', max_var=30, accept=-100, maxiter=500, lam=0):
         def is_singular(args):
             #args = [self.top]+list(args)[1:] # del
 
@@ -241,6 +354,9 @@ class Tree:
 
             self.set_var(args)
             ll = self.likelihood()
+            if lam != 0:
+                #print(lam*sum(a**2 for a in self.get_var()), ll)
+                ll -= lam*sum(a**2 for a in self.get_var())
             return -1*ll # min to max
 
         size = self.num()
@@ -248,7 +364,7 @@ class Tree:
         bnds = tuple((0, None) for _ in range(size))
         #bnds = tuple((None, None) for _ in range(size))
         cons = ({'type': 'ineq', 'fun': is_singular},)
-        print(bnds, cons)
+        #print(bnds, cons)
 
         # Various optimization methods
         global_param_space = tuple((0, max_var) for _ in range(size))
