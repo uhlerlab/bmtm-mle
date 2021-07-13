@@ -2,6 +2,7 @@
 Reconstruct covariance matrix given samples
 '''
 import argparse
+import random
 import math
 from itertools import chain
 
@@ -23,7 +24,7 @@ def eigshrink(mle):
     def disp(m, e):
         return sum(abs(a-m)**2 for a in e)
     
-    coef = math.sqrt(disp(othermu, othereigs)/(disp(mu, eigs)*2))
+    coef = math.sqrt(disp(othermu, othereigs)/(disp(mu, eigs)))
 
     newdiag = np.diag([mu + (eigs[i]-mu)*coef for i in range(len(eigs))])
     return [[float(a) for a in b] for b in vectors @ newdiag @ np.transpose(vectors)]
@@ -33,8 +34,6 @@ def mxshrink(mle):
     other = vectors @ np.diag(values) @ np.transpose(vectors)
     assert(np.allclose(mle, other))
     
-
-
     p = mle.shape[0]
     n = (1 if p % 2 == 1 else 1.5)
     #print(n, p, len(data))
@@ -43,6 +42,98 @@ def mxshrink(mle):
     #newdiag = np.diag([(n/(n+p+1-2*i))*values[i] for i in range(len(values))])
     return [[float(a) for a in b] for b in vectors @ newdiag @ np.transpose(vectors)]
 
+def make_cluster_tree(cl):
+    if type(cl[0]) != tuple:
+        t = Tree()
+        t.data = cl[0]
+        return t
+
+    t = Tree()
+    for c in cl: 
+        t.children.append(make_cluster_tree(c))
+        t.children[-1].parent = t
+    return t
+
+def make_cluster_var(cl, dists):
+    if type(cl[0]) != tuple:
+        return []
+
+    vars = []
+    for c in cl: 
+        vars.append(dists[(c, cl)])
+        vars.extend(make_cluster_var(c, dists))
+    return vars
+
+def neighbor_joining(data):
+    clusters = [(d,) for d in data]
+    dists = {(a, b):abs(a[0]-b[0]) for a in clusters for b in clusters}
+    def ad(piv):
+        return sum(dists[(piv, k)] for k in clusters)
+    def n():
+        return len(clusters) + 1
+    while len(clusters) > 1:
+        qdists = {(a, b):((n()-2)*dists[(a, b)]
+            - ad(a) - ad(b))
+        for a in clusters for b in clusters}
+        mv, indi, indj = min((qdists[clusters[a], clusters[b]], a, b) 
+            for a in range(len(clusters)) 
+                for b in range(len(clusters)) if a != b)
+
+        ci = clusters[indi]
+        cj = clusters[indj]
+
+        nc = (ci,cj)
+        # check cluster len
+        dists[(ci, nc)] = ((1/2)*dists[(ci, cj)] 
+            + (1/(2*(n()-2)))*(ad(ci) - ad(cj)))
+        dists[(cj, nc)] = dists[(ci, cj)] - dists[(ci, nc)]
+        dists[(nc, ci)] = dists[(ci, nc)]
+        dists[(nc, cj)] = dists[(cj, nc)]
+
+        clusters.remove(ci)
+        clusters.remove(cj)
+
+        for a in clusters:
+            nd = (dists[(ci, a)]+dists[(cj, a)] - dists[(ci, cj)])/2
+            dists[(nc, a)] = nd 
+            dists[(a, nc)] = nd 
+
+        dists[(nc, nc)] = 0
+        clusters.append(nc) 
+
+    nj_tree = make_cluster_tree(clusters[0])
+    vars = [0]+make_cluster_var(clusters[0], dists)
+    nj_tree.set_var([v**2 for v in vars])
+    #nj_tree.set_var(vars)
+    return nj_tree
+
+def upgma(data):
+    clusters = [(d,) for d in data]
+    dists = {(a, b):abs(a[0]-b[0]) for a in clusters for b in clusters}
+    while len(clusters) > 1:
+        mv, indi, indj = min((dists[clusters[a], clusters[b]], a, b) 
+            for a in range(len(clusters)) 
+                for b in range(len(clusters)) if a != b)
+
+        ci = clusters[indi]
+        cj = clusters[indj]
+
+        nc = (ci,cj)
+        for a in clusters:
+            nd = (dists[(ci, a)]+dists[(cj, a)])/2
+            dists[(nc, a)] = nd 
+            dists[(a, nc)] = nd 
+        dists[(nc, nc)] = 0
+
+        clusters.remove(ci)
+        clusters.remove(cj)
+        clusters.append(nc) 
+    upgma_tree = make_cluster_tree(clusters[0])
+    vars = [0]+make_cluster_var(clusters[0], dists)
+    #upgma_tree.set_var([v for v in vars])
+    upgma_tree.set_var(vars)
+    return upgma_tree
+ 
 def sample_cov(data):
     return [[a*b for b in data] for a in data]
 
@@ -172,28 +263,6 @@ if __name__ == '__main__':
 
         assert(len(lines) == 2*num_trials)
 
-        '''if args.estimator == 'invalidshrink':
-            beta_sq = 0
-            delta_sq = 0
-            for i in range(num_trials):
-                data = list(map(float, lines[num_trials+i].split(',')))
-
-                ground_truth_tree = Tree()
-                ground_truth_tree.make_prefix(guess_arr)
-                ground_truth_tree.set_var(list(map(float, lines[i].split(','))))
-
-                sigma = np.array(ground_truth_tree.cov_matrix())
-                #mle = np.array(our_mle(data, guess_arr).cov_matrix())
-                mle = np.array(sample_cov(data))
-                identity = np.identity(mle.shape[0])
-
-                mu = inner(mle, identity)
-                beta_sq += diff(sigma, mle)
-                delta_sq += diff (mle, mu*identity)
-            beta_sq /= num_trials
-            delta_sq /= num_trials
-        '''
-
         for i in range(num_trials):
             guess_arr = list(map(int, lines[i].split('\t')[0].split('-')))
 
@@ -234,70 +303,11 @@ if __name__ == '__main__':
                 ot.set_var([(b**2/(2*b**2 + b))*a if b != 0 else a for a, b in zip(ot.get_var(), ground_truth_tree.get_var())])
                 assert(all((a == 0) == (b == 0) for a, b in zip(ot.get_var(), ground_truth_tree.get_var())))
 
-                '''print(ground_truth_tree.get_var())
-                print(ot.get_var())
-                print(ot.get_data())
-
-                def get_datas(node):
-                    ans = [node.data]
-                    for c in node.children:
-                        ans.extend(get_datas(c))
-                    return ans
-                print(get_datas(ot))
-                '''
-
-
                 guesses.append(format_tree(ot, data_to_label))
-
             elif args.estimator == 'upgma':
-                clusters = [(d,) for d in data]
-                dists = {(a, b):abs(a[0]-b[0]) for a in clusters for b in clusters}
-                while len(clusters) > 1:
-                    mv, indi, indj = min((dists[clusters[a], clusters[b]], a, b) 
-                        for a in range(len(clusters)) 
-                            for b in range(len(clusters)) if a != b)
-                    
-                    ci = clusters[indi]
-                    cj = clusters[indj]
-
-                    nc = (ci,cj)
-                    for a in clusters:
-                        nd = (dists[(ci, a)]+dists[(cj, a)])/2
-                        dists[(nc, a)] = nd 
-                        dists[(a, nc)] = nd 
-                    dists[(nc, nc)] = 0
-
-                    clusters.remove(ci)
-                    clusters.remove(cj)
-                    clusters.append(nc)
-
-                def make_cluster_tree(cl):
-                    if type(cl[0]) != tuple:
-                        t = Tree()
-                        t.data = cl[0]
-                        return t
-
-                    t = Tree()
-                    for c in cl: 
-                        t.children.append(make_cluster_tree(c))
-                        t.children[-1].parent = t
-                    return t
-
-                def make_cluster_var(cl):
-                    if type(cl[0]) != tuple:
-                        return []
-
-                    vars = []
-                    for c in cl: 
-                        vars.append(dists[(c, cl)])
-                        vars.extend(make_cluster_var(c))
-                    return vars
-                
-                upmg_tree = make_cluster_tree(clusters[0])
-                vars = [0]+make_cluster_var(clusters[0])
-                upmg_tree.set_var([v for v in vars])
-                guesses.append(format_tree(upmg_tree, data_to_label))
-
+                guesses.append(format_tree(upgma(data), data_to_label))
+            elif args.estimator == 'nj':
+                guesses.append(format_tree(neighbor_joining(data), data_to_label))
             elif args.estimator == 'indep':
                 indep_tree = Tree()
                 indep_tree.make_prefix([0]*num_leaf_nodes)
@@ -380,33 +390,7 @@ if __name__ == '__main__':
                 reconstruct_tree.fr_proj()
                 guesses.append(reconstruct_tree.cov_matrix())
             elif args.estimator == 'lineartree':
-                '''s_data = sorted(data+[0])
-                #prefix = list(reversed(range(0, num_leaf_nodes-1)))
-                prefix = long_tree_structures(num_leaf_nodes)[-1]
-                diffs = [(s_data[i]-s_data[i+1])**2 for i in range(len(s_data)-1)]
-                variances = []
-                for i in range(num_leaf_nodes):
-                    variances.append(diffs[i])
-                    variances.append(0)
-
-                reconstruct_tree = Tree()
-                reconstruct_tree.make_prefix(prefix)
-                reconstruct_tree.set_var(variances)
-                guesses.append(reconstruct_tree.cov_matrix())
-                '''
-                '''s_data = sorted(data+[0])
-                diffs = [(s_data[i]-s_data[i+1])**2 for i in range(len(s_data)-1)]
-                total_vars = [0]
-                for d in diffs:
-                    total_vars.append(total_vars[-1] + d)
-                def min_ind(i, j):
-                    indi = s_data.index(data[i])
-                    indj = s_data.index(data[j])
-                    return min(indi, indj)
-                guesses.append([[total_vars[min_ind(i, j)] for j in range(len(data))] for i in range(len(data))])
-                '''
                 guesses.append(compute_linear_tree(data, min(data+[0])))
-
             elif args.estimator == 'lineartreezero':
     
                 new_tree = compute_zero_linear_tree(data)
@@ -459,6 +443,14 @@ if __name__ == '__main__':
             elif args.estimator == 'eigshrink':
                 mle = np.array(our_mle(data, guess_arr).cov_matrix())
                 guesses.append(eigshrink(mle))
+            elif args.estimator == 'random_fo':
+                fo_seed = [random.randrange(0, 20) for _ in range(ground_truth_tree.num())]
+                ot = Tree()
+                ot.make_prefix(ground_truth_tree.get_prefix())
+                ot.set_var([1 for _ in range(ground_truth_tree.num())])
+                ot.random_fo(fo_seed)
+                ot.set_data(data)
+                guesses.append(format_tree(ot, data_to_label))
             elif args.estimator == 'eigshrinkempcov':
                 mle = np.array(sample_cov(data))
                 guesses.append(eigshrink(mle))

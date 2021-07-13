@@ -9,14 +9,13 @@ import glob
 import matplotlib.pyplot as plt
 import numpy as np
 
-from scratch.util import fr_norm_sq, fr_norm_sq_one 
-from scratch.tree import bhv_distance_owens, Tree, bhv_distance_owens_list
+from scratch.util import fr_norm_sq, fr_norm_sq_one
+from scratch.tree import bhv_distance_owens, Tree, in_tree, bhv_distance_owens_list, rf
 from scratch.reconstruct import diff
 from scratch.solver import Solver, var_prediction_star, var_prediction_star_novel
 
 def format_errors(differences):
     differences.sort()
-    #differences = differences[:(9*len(differences))//10]
     avg = sum(differences)/len(differences)
     low = avg - differences[len(differences)//10]
     up = differences[(9*len(differences))//10] - avg
@@ -54,15 +53,6 @@ if __name__ == '__main__':
                     assert(len(lines) % 2 == 0)
                     num_trials = len(lines)//2
 
-                    def in_tree(line):
-                        pre, vari, data, _ = (list(map(f, a.split(','))) 
-                            for a, f in zip(line.split('\t'), [int, float, float, int]))
-                        t = Tree()
-                        t.make_prefix(pre)
-                        t.set_var(vari)
-                        t.set_data(data)
-                        return t 
-
                     num_childrens.append(in_tree(lines[0]).num_leaf_nodes())
 
                     if args.display == 'risk':
@@ -93,29 +83,18 @@ if __name__ == '__main__':
                         sumt = [s/num_trials for s in sumt]
 
                         differences = [sum(abs(a-b) for a, b in zip(in_tree(lines[0]).get_var(), sumt))]
+                    elif args.display == 'rf_distance':
+                        differences = [rf(in_tree(lines[ind]), in_tree(lines[num_trials+ind])) for ind in range(num_trials)]
                     else:
                         raise ValueError('Could not find display')
 
                     worst_diff, worst_i = max((dif, i) for i, dif in enumerate(differences))
                     gt = in_tree(lines[worst_i])
                     guess = in_tree(lines[num_trials+worst_i])
-                    print(guess.get_var())
-                    print(gt.get_var())
-                    print(gt.get_data())
-                    print(gt.likelihood())
-                    print(guess.likelihood())
-                    print('star', var_prediction_star(gt.get_data()))
-                    print('star', var_prediction_star_novel(gt.get_data()))
                     nt = Tree()
                     nt.make_prefix(gt.get_prefix())
                     nt.set_data(gt.get_data())
                     Solver().predict_mle(nt)
-                    print(nt.likelihood())
-                    print(nt.get_var())
-                    print(worst_diff)
-                    print(math.sqrt(sum((a-b)**2 for a, b in zip(guess.get_var(), gt.get_var()))))
-                    print(math.sqrt(sum((a-b)**2 for a, b in zip(var_prediction_star_novel(gt.get_data()), gt.get_var()))))
-                    print(math.sqrt(sum((a-b)**2 for a, b in zip(var_prediction_star(gt.get_data()), gt.get_var()))))
 
                     expectations.append(format_errors(differences))
                 elif fmt == 'covariance':
@@ -184,7 +163,9 @@ if __name__ == '__main__':
         #with open(args.out_file, 'w') as f:
         #    f.write('\n'.join(map(str, expectations)))
         label = w.split('-')[2]
-        LABELS = {'us': 'bmtm mle', 'lineartreezero': 'ddm mle', 'shrink': 'shrink-to-ddm', 'foshrink': 'one-third-shrink'}
+        LABELS = {'us': 'bmtm mle', 'lineartreezero': 'ddm mle', 
+            'shrink': 'shrink-to-ddm', 'foshrink': 'one-third-shrink',
+            'nj': 'neighbor-joining'}
         if label in LABELS:
             label = LABELS[label]
         if len(num_childrens) != 0:
@@ -201,7 +182,7 @@ if __name__ == '__main__':
     plt.title(args.title)
     plt.figtext(.5, .9, args.description, wrap=True, ha='center', fontsize=7)
     plt.xlabel('# of observed nodes')
-    risk = '(frobenius squared)' if fmt != 'tree' else '(l2 on geodesic in bhv space)'
+    risk = '(frobenius squared)' if fmt != 'tree' else '(bhv l2)'
     plt.ylabel('{} {}'.format(args.display, risk))
 
     if args.x_log:

@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from scratch.util import fr_norm_sq_one, fr_norm_sq
-from scratch.tree import bhv_distance_owens_list
-from scratch.solver import Tree
+from scratch.tree import bhv_distance_owens_list, in_tree
+from scratch.solver import Tree, rf
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -40,25 +40,10 @@ if __name__ == '__main__':
             assert(len(lines) % 2 == 0)
             num_trials = len(lines)//2
 
-            def in_tree(line):
-                pre, vari, data, labels = (list(map(f, a.split(','))) 
-                    for a, f in zip(line.split('\t'), [int, float, float, int]))
-                t = Tree()
-                t.make_prefix(pre)
-                t.set_var(vari)
-                t.set_data(data)
-                t.set_labels(labels)
-                return t 
-
             #ns = []
             #for ind in range(len(lines)):
             #    ns.append(in_tree(lines[ind]).newick())
             #differences = bhv_distance_owens_list(ns)
-            def rf(a, b):
-                ass = a.get_splits()
-                bss = b.get_splits()
-
-                return sum(int(s not in bss) for s in ass) + sum(int(s not in ass) for s in bss)
             differences = [rf(in_tree(lines[ind]), in_tree(lines[num_trials+ind])) for ind in range(num_trials)]
 
             plt.hist(differences, bins=40)

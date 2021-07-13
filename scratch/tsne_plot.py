@@ -10,18 +10,8 @@ import numpy as np
 from sklearn.manifold import TSNE
 
 from scratch.util import fr_norm_sq, fr_norm_sq_one 
-from scratch.tree import bhv_distance_owens, Tree
+from scratch.tree import bhv_distance_owens, Tree, in_tree
 from scratch.gen_sample_series import add_reconstruct_args, reconstruct_file_tag
-
-def in_tree(line):
-    pre, vari, data, labels = (list(map(f, a.split(','))) 
-        for a, f in zip(line.split('\t'), [int, float, float, int]))
-    t = Tree()
-    t.make_prefix(pre)
-    t.set_var(vari)
-    t.set_data(data)
-    t.set_labels(labels)
-    return t 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -115,18 +105,24 @@ if __name__ == '__main__':
     offset = 0
     colors = ['red', 'green', 'blue', 'orange', 'purple', 'black', 'brown']
     for label_num, (k, v, lookup) in enumerate(bin_vec_dict):
-        sizes = [100*(math.log(1+lookup[name])/math.log(10)) for name in v] 
-        ax.scatter(embedded_bin_vec[offset:offset+len(v)][:,0], 
-            embedded_bin_vec[offset:offset+len(v)][:,1], 
-            sizes,
-            alpha=(0.3 if k == 'gt' else 1),
-            c=colors[label_num], label=k) 
-        for i in range(len(v)):
-            if all(a == b for a, b in zip(all_bin_vec[offset+i], gt_bin)):
-                print('HIIT')
-                ax.annotate('gt',
-                    xy=(embedded_bin_vec[offset+i][0], 
-                    embedded_bin_vec[offset+i][1]))
+        total = sum(lookup[name] for name in v)
+        if k == 'gt':
+            sizes = [100]
+        else:
+            sizes = [1000*(lookup[name]/total) for name in v] 
+
+        if k != 'gt':
+            ax.scatter(embedded_bin_vec[offset:offset+len(v)][:,0], 
+                embedded_bin_vec[offset:offset+len(v)][:,1], 
+                sizes,
+                alpha=(0.3 if k == 'gt' else 1),
+                c=colors[label_num], label=k) 
+            for i in range(len(v)):
+                if all(a == b for a, b in zip(all_bin_vec[offset+i], gt_bin)):
+                    print('HIIT')
+                    ax.annotate('gt',
+                        xy=(embedded_bin_vec[offset+i][0], 
+                        embedded_bin_vec[offset+i][1]))
         if args.labels == 1:
             for i in range(len(v)):
                 ax.annotate(''.join(map(str, map(int, all_bin_vec[offset+i]))),

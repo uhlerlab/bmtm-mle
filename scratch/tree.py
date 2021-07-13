@@ -13,6 +13,47 @@ EPSILON = 1e-6
 
 LOW_NUMBER = -999999
 
+def rf(a, b):
+    ass = a.get_splits()
+    bss = b.get_splits()
+
+    return sum(int(s not in bss) for s in ass) + sum(int(s not in ass) for s in bss)
+
+def in_tree(line):
+    pre, vari, data, labels = (list(map(f, a.split(','))) 
+        for a, f in zip(line.split('\t'), [int, float, float, int]))
+    t = Tree()
+    t.make_prefix(pre)
+    t.set_var(vari)
+    t.set_data(data)
+    t.set_labels(labels)
+    return t 
+
+def average_tree_percent_zero(gen):
+    num_trees = 1
+    sumt = [1 if a < 1e-7 else 0 for a in next(gen).get_var()]
+    for t in gen:
+        sumt = [s+(1 if a < 1e-7 else 0) for s, a in zip(sumt, t.get_var())]
+        num_trees += 1
+    nt = Tree()
+    nt.make_prefix(t.get_prefix())
+    nt.set_var([s/num_trees for s in sumt])
+    return nt
+
+def average_tree(gen):
+    num_trees = 1
+    sumt = next(gen).get_var()
+    for t in gen:
+        sumt = [s+a for s, a in zip(sumt, t.get_var())]
+        num_trees += 1
+    nt = Tree()
+    nt.make_prefix(t.get_prefix())
+    nt.set_var([s/num_trees for s in sumt])
+    return nt
+
+def box(x, y, width):
+    return (x-width/2, y, x+width/2, y+width)
+
 def bhv_distance_owens(t1, t2, fh='tmpbhv.txt'):
     input = t1.newick() + '\n' + t2.newick()
     #print('input')
@@ -75,6 +116,11 @@ class Tree:
         for c in self.children:
             count += c.num() 
         return count
+
+    def num_depth(self):
+        if len(self.children) == 0:
+            return 0
+        return 1+max(c.num_depth() for c in self.children)
 
     def num_leaf_nodes(self):
         if len(self.children) == 0:
@@ -261,6 +307,42 @@ class Tree:
         else:
             for c in self.children:
                 yield from c.leaves()
+    
+    def draw(self, can, x, y, width=20, yspace=50, xspace=60, scale=1, round_number=2):
+        width *= scale
+        yspace *= scale
+        xspace *= scale
+
+        spacer_x = (width+xspace)
+        next_y = y + width + yspace
+        bot_width = spacer_x*(self.num_leaf_nodes())
+        next_x = x 
+
+        my_center_x = x+bot_width/2
+        my_center_y = y+width/2
+        can.create_oval(*box(my_center_x, y, width), fill='black')
+
+        if self.parent is None:
+            can.create_line(my_center_x, my_center_y, 
+                my_center_x, my_center_y-yspace)
+            can.create_text(my_center_x+2, my_center_y-(3/4)*yspace, font="Arial",
+                text="{}".format(round(self.above_var, round_number)))
+
+        for c in self.children:
+            win = spacer_x*c.num_leaf_nodes()
+            line = (my_center_x, my_center_y, 
+                next_x+win/2, next_y+width/2)
+            can.create_line(*line)
+            can.create_text((line[0]+line[2])/2, (line[1]+line[3])/2, font="Arial",
+                text="{}".format(round(c.above_var, round_number)))
+            c.draw(can, next_x, next_y, width, yspace, xspace, 1, round_number)
+            next_x += win
+
+        if len(self.children) > 0:
+            assert(abs(next_x - (x + bot_width)) < 1e-6)
+        elif self.data is not None:
+            can.create_text(my_center_x, my_center_y+width, font="Arial",
+                text="{}".format(round(self.data, round_number)))
 
     def _splits_below(self):
         if len(self.children) == 0:
@@ -280,7 +362,7 @@ class Tree:
         labels.add(-100)
         below_splits = self._splits_below()
 
-        return [tuple(sorted((s, tuple(sorted(labels - set(s)))))) for s, av in below_splits if av > 0]
+        return [tuple(sorted((s, tuple(sorted(labels - set(s)))))) for s, av in below_splits if av > 1e-8]
 
     def get_leaf(self, ind):
         if len(self.children) == 0:
