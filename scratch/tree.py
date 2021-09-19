@@ -104,12 +104,17 @@ class Tree:
     
     def hash(self):
         if self.parent is None:
-            return (0,)
+            return (1, 0,)
         
         return self.parent.hash() + (self.parent.children.index(self),)
 
+    # ONLY USE FOR NODES IN THE SAME TREE
+    # A dictionary of nodes from multiple trees will have unexpected behavior
+    def __hash__(self):
+        return int(''.join(map(str, self.hash())))
+
     def make_child(self):
-        self.children.append(Tree(self))
+        self.children.append(type(self)(parent=self))
 
     def num(self):
         count = 1
@@ -208,51 +213,47 @@ class Tree:
             new += candidate_parents[0][i+1:]
         return new
 
-    def get_labels(self):
+    def _set_at_leaves(self, key, arr):
         if len(self.children) == 0:
-            return [self.label]
+            setattr(self, key, arr[0])
+            return 1 
+
+        count = 0
+        for c in self.children:
+            count += c._set_at_leaves(key, arr[count:]) 
+        return count
+
+    def _get_at_leaves(self, key):
+        if len(self.children) == 0:
+            return [getattr(self, key)]
         ans = []
         for c in self.children:
-            ans.extend(c.get_labels())
+            ans.extend(c._get_at_leaves(key))
         return ans
+
+    def get_labels(self):
+        return self._get_at_leaves('label')
 
     def set_labels(self, labels):
-        if len(self.children) == 0:
-            self.label = labels[0]
-            return 1 
-
-        count = 0
-        for c in self.children:
-            count += c.set_labels(labels[count:]) 
-        return count
+        return self._set_at_leaves('label', labels)
 
     def get_data(self):
-        if len(self.children) == 0:
-            return [self.data]
-        ans = []
-        for c in self.children:
-            ans.extend(c.get_data())
-        return ans
+        return self._get_at_leaves('data')
 
     def set_data(self, data):
-        if len(self.children) == 0:
-            self.data = data[0]
-            return 1 
-
-        count = 0
-        for c in self.children:
-            count += c.set_data(data[count:]) 
-        return count
+        return self._set_at_leaves('data', data)
     
     def var(self):
         return self.above_var + (0 if self.parent is None else self.parent.var())
     
     def cov_matrix(self):
-        nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
+        #nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
+        nodes = list(self.leaves() )
         return [[a.covar(b) for b in nodes] for a in nodes]
 
     def _build_matrices(self):
-        nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
+        #nodes = [self.get_leaf(i) for i in range(self.num_leaf_nodes())]
+        nodes = list(self.leaves())
         m_arr = [[a.covar(b) for b in nodes] for a in nodes]
         s_arr = [[a.data*b.data for b in nodes] for a in nodes]
         x_arr = [a.data for a in nodes]
@@ -358,7 +359,12 @@ class Tree:
         return splits + [(tuple(sorted(below)), self.above_var)]
 
     def get_splits(self):
-        labels = set(self.get_labels())
+        raw_labels = self.get_labels()
+        if any(a is None for a in raw_labels):
+            raise ValueError('Splits operates on labels. One of your labels is empty.')
+        if any(not isinstance(a, (int, float)) for a in raw_labels):
+            raise ValueError('For splits to work, your labels need to be numeric.')
+        labels = set(raw_labels)
         labels.add(-100)
         below_splits = self._splits_below()
 
@@ -419,13 +425,18 @@ class Tree:
         if root:
             return ans
         return [len(ans)]+ans
-
     
-    def mle(self, method='trust-constr', max_var=30, accept=-100, maxiter=500, lam=0):
+    def mle_size(self):
+        return self.num()
+    
+    def mle_set(self, var):
+        return self.set_var(var)
+    
+    def mle(self, method='trust-constr', max_var=30, accept=-100, maxiter=500, lam=0, global_param_space=None):
         def is_singular(args):
             #args = [self.top]+list(args)[1:] # del
 
-            self.set_var(args)
+            self.mle_set(args)
             return int(self.is_singular())
 
         def opt(args):
@@ -434,14 +445,14 @@ class Tree:
             if any(a < 0 for a in args):
                 return -LOW_NUMBER 
 
-            self.set_var(args)
+            self.mle_set(args)
             ll = self.likelihood()
             if lam != 0:
                 #print(lam*sum(a**2 for a in self.get_var()), ll)
                 ll -= lam*sum(a**2 for a in self.get_var())
             return -1*ll # min to max
 
-        size = self.num()
+        size = self.mle_size()
         starting = [random.uniform(-1, 1) for _ in range(size)]
         bnds = tuple((0, None) for _ in range(size))
         #bnds = tuple((None, None) for _ in range(size))
@@ -449,7 +460,8 @@ class Tree:
         #print(bnds, cons)
 
         # Various optimization methods
-        global_param_space = tuple((0, max_var) for _ in range(size))
+        if global_param_space is None:
+            global_param_space = tuple((0, max_var) for _ in range(size))
         if method == 'dual_annealing':
             res = optimize.dual_annealing(opt, global_param_space, accept=accept, maxiter=maxiter, initial_temp=10000)
         elif method == 'differential_evolution':
@@ -461,7 +473,7 @@ class Tree:
 
         #res2 = [self.top]+list(res.x)[1:] # del
         #self.set_var(res2)
-        self.set_var(res.x)
+        self.mle_set(res.x)
         return res.x
         #return res2
 

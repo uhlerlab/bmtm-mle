@@ -14,8 +14,18 @@ from scratch.tree import bhv_distance_owens, Tree, in_tree, bhv_distance_owens_l
 from scratch.reconstruct import diff
 from scratch.solver import Solver, var_prediction_star, var_prediction_star_novel
 
-def format_errors(differences):
+def format_errors(differences, mean=False, median=False):
     differences.sort()
+    if mean:
+        avg = sum(differences)/len(differences)
+        std = sum(abs(d - avg) for d in differences)/len(differences)
+        #return (avg, std, std)
+    if median:
+        avg = sorted(differences)[len(differences)//2]
+        low = avg - differences[len(differences)//10]
+        up = differences[(9*len(differences))//10] - avg
+        return (avg, low, up)
+    
     avg = sum(differences)/len(differences)
     low = avg - differences[len(differences)//10]
     up = differences[(9*len(differences))//10] - avg
@@ -24,12 +34,13 @@ def format_errors(differences):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--in_file_wildcards', nargs='+', type=str)
-    parser.add_argument('--out_file', type=str, default=None)
+    parser.add_argument('--save_file', type=str, default=None)
     parser.add_argument('--title', type=str, default='')
     parser.add_argument('--description', type=str, default='')
     parser.add_argument('--display', type=str, default='risk')
-    parser.add_argument('--x_log', type=int, default=0)
+    parser.add_argument('--desc', type=int, default=0)
     parser.add_argument('--y_log', type=int, default=0)
+    parser.add_argument('--jitter', type=float, default=0.2)
     parser.add_argument('--errorbar', type=int, default=1)
     args = parser.parse_args()
 
@@ -151,9 +162,12 @@ if __name__ == '__main__':
                     expectations.append(format_errors(differences))
         return num_childrens, expectations
 
-    SUB = {'-us-': 'ab', '-lineartreezero-': 'aa', '-shrink': 'ac', '-foshrink': 'ad', }
-    for w in sorted(args.in_file_wildcards, key=lambda x: SUB[next(s for s in SUB if s in x)] 
-        if any(s in x for s in SUB) else x):
+    SUB = ['us', 'lineartreezero', 'shrink', 'foshrink', 'upgma', 'nj', 'ls', 'mxshrink']
+    SUB = ['-'+s+'-' for s in SUB]
+
+    x_values = set()
+    for i, w in enumerate(sorted(args.in_file_wildcards, 
+        key=lambda x: SUB.index(next(s for s in SUB if s in x)) if any(s in x for s in SUB) else x)):
         print(w)
         num_childrens, expectations = run(w) 
         mid, low, up = zip(*expectations)
@@ -165,33 +179,41 @@ if __name__ == '__main__':
         label = w.split('-')[2]
         LABELS = {'us': 'bmtm mle', 'lineartreezero': 'ddm mle', 
             'shrink': 'shrink-to-ddm', 'foshrink': 'one-third-shrink',
-            'nj': 'neighbor-joining'}
+            'nj': 'neighbor-joining', 'ls': 'least-squares'}
         if label in LABELS:
             label = LABELS[label]
+
+        num_childrens = [round(math.log(a)/math.log(2)) for a in num_childrens]
+        x_values.update(num_childrens)
+        newx = [args.jitter*(2*(i/(len(args.in_file_wildcards)-1))-1)+a for a in num_childrens]
         if len(num_childrens) != 0:
             if args.errorbar == 1:
-                plt.errorbar([random.uniform(-0.5, 0.5)+a for a in num_childrens], 
+                plt.errorbar(newx, 
                     mid, yerr=[low, up], 
                     label=label, capsize=10, fmt='o')
             else:
-                plt.errorbar([random.uniform(-0.5, 0.5)+a for a in num_childrens], 
+                plt.errorbar(newx, 
                     mid, yerr=[low, up], 
                     label=label, capsize=0, fmt='o')
     #plt.plot(list(range(len(expectations))), [(1/2)*(i+1)**(-1/2) for i in range(len(expectations))])
     plt.legend(loc="upper left")
     plt.title(args.title)
-    plt.figtext(.5, .9, args.description, wrap=True, ha='center', fontsize=7)
-    plt.xlabel('# of observed nodes')
-    risk = '(frobenius squared)' if fmt != 'tree' else '(bhv l2)'
-    plt.ylabel('{} {}'.format(args.display, risk))
-
-    if args.x_log:
-        plt.xscale('log')
-        plt.xlabel('LOG ' + plt.gca().xaxis.get_label().get_text())
+    if args.desc:
+        plt.figtext(.5, .9, args.description, wrap=True, ha='center', fontsize=7)
+    plt.xlabel('# of leaves')
+    risk = '(' + ('frobenius squared)' if fmt != 'tree' else 'bhv l2)')
+    DISPLAY_LABELS = {'guess_bias': 'estimator bias',
+        'guess_variance': 'estimator variance',
+        'guess_norm': 'estimator norm',
+        'risk': 'estimator risk'}
+    plt.ylabel('{} {}'.format(DISPLAY_LABELS.get(args.display, args.display), risk))
     if args.y_log:
         plt.yscale('log')
-        plt.ylabel('LOG ' + plt.gca().yaxis.get_label().get_text())
-    if args.out_file is None:
+        #plt.ylabel(plt.gca().yaxis.get_label().get_text())
+
+    x_val_list = list(sorted(x_values))
+    plt.xticks(x_val_list, list(map(str, [2**a for a in x_val_list])))
+    if args.save_file is None:
         plt.show()
     else:
-        plt.savefig(args.out_file)
+        plt.savefig(args.save_file)

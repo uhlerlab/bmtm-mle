@@ -8,11 +8,100 @@ from itertools import chain
 
 import numpy as np
 from numpy.lib.arraysetops import intersect1d
+import cvxpy as cp
 
 from scratch.tree import Tree, gaussian_likelihood
 from scratch.solver import Solver, var_prediction_star_novel
 from scratch.runtime_comparison import long_tree_with_root
 from scratch.util import fr_norm_sq_one, max_var, operator_norm
+
+def compute_ls(data, guess_arr):
+    tree = Tree()
+    tree.make_prefix(guess_arr)
+    tree.set_data(data)
+
+    _, sample_cov, _ = tree._build_matrices()
+    sample_cov = np.array(sample_cov)
+
+    # Problem data.
+    p = tree.num_leaf_nodes()
+    np.random.seed(1)
+
+    # Construct the problem.
+    A = cp.Variable((p, p))
+    objective = cp.Minimize(cp.sum_squares(A - sample_cov))
+    constraints = [A[i][j] - A[j][i] == 0 for i in range(p) for j in range(i+1, p)]
+    #constraints.extend([A[i][j] >= 0 for i in range(p) for j in range(i+1, p)])
+    #constraints = [A >> 0]
+    #constraints.append(A >> 0)
+    constraints.append(A >= 0)
+
+    eqfunnel = {}
+    for i, a in enumerate(tree.leaves()):
+        for j, b in enumerate(tree.leaves()):
+            if j >= i:
+                continue
+            parent = a.lca(b)
+            if parent.num_leaf_nodes() > 2:
+                eqfunnel[parent] = (i, j)
+
+    for i, a in enumerate(tree.leaves()):
+        for j, b in enumerate(tree.leaves()):
+            if j >= i:
+                continue
+            parent = a.lca(b)
+            if parent in eqfunnel:
+                k, l = eqfunnel[parent]
+                if (k, l) != (i, j):
+                    print('eq', (k, l), (i, j))
+                    constraints.append(A[i][j] - A[k][l] == 0)
+
+    for i, a in enumerate(tree.leaves()):
+        a.ind = i
+    
+    def m_ind(a):
+        if len(a.children) == 0:
+            return a.ind, a.ind
+        else:
+            return a.children[0].get_leaf(0).ind, a.children[1].get_leaf(0).ind
+    for a in tree.nodes():
+        if a.parent is not None:
+            ac1, ac2 = m_ind(a)
+            pc1, pc2 = m_ind(parent)
+            constraints.append(A[pc1][pc2] - A[ac1][ac2] <= 0)
+
+    '''done = set()
+    for i, a in enumerate(tree.leaves()):
+        for j, b in enumerate(tree.leaves()):
+            for k, c in enumerate(tree.leaves()):
+                for l, d in enumerate(tree.leaves()):
+                    n1 = a.lca(b)
+                    n2 = c.lca(d)
+                    nparent = n1.lca(n2)
+
+                    if n1 != n2 and (n1, n2) not in done and (n2, n1) not in done:
+                        if nparent == n1:
+                            print(n1.hash() == n2.hash(), a.hash() == b.hash())
+                            print(n1.hash(), n2.hash(), a.hash(), b.hash())
+                            print('ineq', (i, j), (k, l))
+                            constraints.append(A[i][j] - A[k][l] <= 0)
+                        elif nparent == n2:
+                            print('ineq', (k, l), (i, j))
+                            constraints.append(A[i][j] - A[k][l] >= 0)
+                        done.add((n1, n2))
+    '''
+    prob = cp.Problem(objective, constraints)
+
+    # The optimal objective value is returned by `prob.solve()`.
+    result = prob.solve()
+    #print(constraints[0].dual_value)
+    for a in tree.nodes():
+        ac1, ac2 = m_ind(a)
+        a.tv = A.value[ac1][ac2]
+    for a in tree.nodes():
+        a.above_var = a.tv - (a.parent.tv if a.parent is not None else 0)
+    
+    return tree
 
 def eigshrink(mle):
     othereigs = np.linalg.eigvals(np.array(compute_linear_tree(data, 0)))
@@ -389,6 +478,9 @@ if __name__ == '__main__':
                 reconstruct_tree.set_data(data)
                 reconstruct_tree.fr_proj()
                 guesses.append(reconstruct_tree.cov_matrix())
+            elif args.estimator == 'ls':
+                guesses.append(format_tree(compute_ls(data, guess_arr), data_to_label))
+
             elif args.estimator == 'lineartree':
                 guesses.append(compute_linear_tree(data, min(data+[0])))
             elif args.estimator == 'lineartreezero':
