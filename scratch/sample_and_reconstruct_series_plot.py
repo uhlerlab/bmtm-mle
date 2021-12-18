@@ -14,6 +14,10 @@ from scratch.tree import bhv_distance_owens, Tree, in_tree, bhv_distance_owens_l
 from scratch.reconstruct import diff
 from scratch.solver import Solver, var_prediction_star, var_prediction_star_novel
 
+f1, f2 = plt.rcParamsDefault["figure.figsize"]
+scale = 1.5
+plt.rcParams["figure.figsize"] = (f1*scale, f2*scale) 
+
 def format_errors(differences, mean=False, median=False):
     differences.sort()
     if mean:
@@ -32,6 +36,9 @@ def format_errors(differences, mean=False, median=False):
     return (avg, low, up)
 
 if __name__ == '__main__':
+
+    plt.rcParams.update({'font.size': 14})
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--in_file_wildcards', nargs='+', type=str)
     parser.add_argument('--save_file', type=str, default=None)
@@ -162,7 +169,7 @@ if __name__ == '__main__':
                     expectations.append(format_errors(differences))
         return num_childrens, expectations
 
-    SUB = ['us', 'lineartreezero', 'shrink', 'foshrink', 'upgma', 'nj', 'ls', 'mxshrink']
+    SUB = ['us', 'lineartreezero', 'shrink', 'foshrink', 'upgma', 'nj', 'ls', 'ledoitwolfvalidshrink', 'mxshrink']
     SUB = ['-'+s+'-' for s in SUB]
 
     x_values = set()
@@ -177,9 +184,9 @@ if __name__ == '__main__':
         #with open(args.out_file, 'w') as f:
         #    f.write('\n'.join(map(str, expectations)))
         label = w.split('-')[2]
-        LABELS = {'us': 'bmtm mle', 'lineartreezero': 'ddm mle', 
+        LABELS = {'us': 'bmtm mle', 'lineartreezero': 'ddgm mle', 
             'shrink': 'shrink-to-ddm', 'foshrink': 'one-third-shrink',
-            'nj': 'neighbor-joining', 'ls': 'least-squares'}
+            'nj': 'neighbor-joining', 'ls': 'least-squares', 'ledoitwolfvalidshrink': 'linear-shrink'}
         if label in LABELS:
             label = LABELS[label]
 
@@ -196,7 +203,12 @@ if __name__ == '__main__':
                     mid, yerr=[low, up], 
                     label=label, capsize=0, fmt='o')
     #plt.plot(list(range(len(expectations))), [(1/2)*(i+1)**(-1/2) for i in range(len(expectations))])
-    plt.legend(loc="upper left")
+    #plt.legend(loc="upper left")
+    #plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05),
+    #      ncol=3, fancybox=True, shadow=True)
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+
     plt.title(args.title)
     if args.desc:
         plt.figtext(.5, .9, args.description, wrap=True, ha='center', fontsize=7)
@@ -213,7 +225,10 @@ if __name__ == '__main__':
 
     x_val_list = list(sorted(x_values))
     plt.xticks(x_val_list, list(map(str, [2**a for a in x_val_list])))
+    
+    #plt.subplots_adjust(left=0.45, bottom=0.15, right=0.4)
+
     if args.save_file is None:
         plt.show()
     else:
-        plt.savefig(args.save_file)
+        plt.savefig(args.save_file, bbox_inches='tight')

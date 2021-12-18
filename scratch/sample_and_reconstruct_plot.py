@@ -25,6 +25,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     in_files = [a for a in [(args.in_file, args.file_label), (args.in_file_2, args.file_label_2)] if a[0] is not None]
+    gl_labels, gl_differences = [], []
 
     for in_file, file_label in in_files:
         with open(in_file, 'r') as f:
@@ -52,10 +53,15 @@ if __name__ == '__main__':
                 #    ns.append(in_tree(lines[ind]).newick())
                 #differences = bhv_distance_owens_list(ns)
                 differences = [rf(in_tree(lines[ind]), in_tree(lines[num_trials+ind])) for ind in range(num_trials)]
+                gl_differences.append(differences)
+                gl_labels.append(file_label)
 
-                plt.hist(differences, bins=40, label=file_label, weights=np.ones(len(differences)) / len(differences))
-                plt.title(args.title)
-            elif fmt == 'variances':
+                print(file_label, sum(differences)/len(differences))
+
+                bins = np.linspace(0, 16, 17)
+                #plt.hist(differences, bins=bins, alpha=0.8, label=file_label,) #weights=np.ones(len(differences)) / len(differences))
+                #plt.title(args.title)
+            '''elif fmt == 'variances':
                 num_children = int(lines.pop(0))
                 guess_arr = list(map(int, lines.pop(0).split('-')))
 
@@ -100,8 +106,17 @@ if __name__ == '__main__':
                 weights = [1/float(len(lines))]*len(lines)
                 plt.hist(lines, bins=2*len(set(lines)), weights=weights)
                 plt.title('ground truth: {}'.format(ground_truth))
+            '''
     
     #plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
+
+    if len(gl_differences) > 0:
+        print(gl_differences)
+        bins = np.linspace(-1, 15, 9)
+        print(bins)
+        plt.hist(gl_differences, bins=bins, alpha=1.0, label=gl_labels) #weights=np.ones(len(differences)) / len(differences))
+        plt.xticks(np.linspace(0, 16, 9))
+        plt.title(args.title)
 
     plt.legend(loc="upper left")
     plt.xlabel('Robinson-Foulds Distance')

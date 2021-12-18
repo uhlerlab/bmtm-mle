@@ -509,6 +509,36 @@ if __name__ == '__main__':
                 new_vars = [math.log(1+v) for v in our_tree.get_var()]
                 our_tree.set_var(new_vars)
                 guesses.append(format_tree(our_tree, data_to_label))
+
+            elif args.estimator == 'ledoitwolfvalidshrink':
+                mle_tree = our_mle(data, guess_arr)
+                mle_matrix = np.array(mle_tree.cov_matrix())
+                #sample_cov_matrix = np.array(sample_cov(data))
+                identity_matrix = np.identity(mle_matrix.shape[0])
+                ground_truth_matrix = np.array(ground_truth_tree.cov_matrix())
+
+                def diff(a, b):
+                    d = a - b
+                    return np.trace(np.matmul(d, np.transpose(d)))
+                
+                mu = np.trace(ground_truth_matrix)/mle_matrix.shape[0]
+                a_sq = diff(ground_truth_matrix, mu*identity_matrix)
+                b_sq = 0
+                trials = 20
+                for i in range(trials):
+                    b_sq += diff(ground_truth_matrix, 
+                        np.array(our_mle(ground_truth_tree.sample_data(), guess_arr).cov_matrix()))
+                b_sq /= trials
+                delta_sq = a_sq + b_sq
+                
+                #final_matrix = (b_sq/delta_sq)*mu*identity_matrix + (a_sq/delta_sq)*mle_matrix
+                #guesses.append(list(final_matrix))
+                #guesses.append(list((4/5)*mu*identity + (1/5)*mle))
+                for l in mle_tree.nodes():
+                    l.above_var = (a_sq/delta_sq)*l.above_var
+                for l in mle_tree.leaves():
+                    l.above_var += (b_sq/delta_sq)*mu
+                guesses.append(format_tree(mle_tree, data_to_label))
             
             elif args.estimator == 'invalidshrink':
                 #sigma = np.array(ground_truth_tree.cov_matrix())
