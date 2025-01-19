@@ -1,6 +1,6 @@
 # BMTM MLE
 
-This repository contains the code to investigate the properties of MLEs for Brownian Motion Tree Models under one sample.
+This repository contains the code accompanying the paper [Maximum Likelihood Estimation for Brownian Motion Tree Models Based on One Sample](https://arxiv.org/abs/2112.00816).
 
 To install the necessary requirements in a virtual environment and activate it, run:
 ```
@@ -9,6 +9,4 @@ source venv/bin/activate
 ```
 
 The repository is organized as follows:
-* `/algorithms` contains implementations of each algorithm.
-* `/experiments` contains the code to replicate experiments.
-* `/scratch` contains files with "scratch work", e.g. profiling and other testing.
+* `/scratch` contains files to reproduce figures.
